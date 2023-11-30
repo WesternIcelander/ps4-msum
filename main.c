@@ -45,7 +45,7 @@ struct pkg_header {
     uint32_t drm_type;
     uint32_t content_type;
     uint32_t content_flags;
-} __attribute__ ((packed, scalar_storage_order("big-endian")));
+} __attribute__ ((packed));
 
 struct pkg_table_entry {
     uint32_t id;
@@ -55,7 +55,25 @@ struct pkg_table_entry {
     uint32_t offset;
     uint32_t size;
     uint64_t padding;
-} __attribute__ ((packed, scalar_storage_order("big-endian")));
+} __attribute__ ((packed));
+
+uint32_t reverseUint32(uint32_t value) {
+    return ((value >> 24) & 0xff)
+         + ((value >>  8) & 0xff00)
+         + ((value <<  8) & 0xff0000)
+         + ((value << 24) & 0xff000000);
+}
+
+uint64_t reverseUint64(uint64_t value) {
+    return ((value >> 56) & 0xff)
+         + ((value >> 40) & 0xff00)
+         + ((value >> 24) & 0xff0000)
+         + ((value >>  8) & 0xff000000)
+         + ((value <<  8) & 0xff00000000)
+         + ((value << 24) & 0xff0000000000)
+         + ((value << 40) & 0xff000000000000)
+         + ((value << 56) & 0xff00000000000000);
+}
 
 void print_checksum(const unsigned char *buf, const char *filename)
 {
@@ -93,11 +111,11 @@ int get_checksum(const char *filename, unsigned char *buf)
     if (fread((void *) &header, sizeof(header), 1, file) != 1)
         goto read_error;
 
-    if (header.content_type == 27) // DLC
+    if (reverseUint32(header.content_type) == 27) // DLC
         goto error;
 
     uint32_t target_id;
-    switch (header.content_flags & 0x0F000000) {
+    switch (reverseUint32(header.content_flags) & 0x0F000000) {
         case 0x0A000000:
             target_id = 0x1001;
             break;
@@ -108,16 +126,16 @@ int get_checksum(const char *filename, unsigned char *buf)
             goto error;
     }
 
-    if (fseek(file, header.table_offset, SEEK_SET))
+    if (fseek(file, reverseUint32(header.table_offset), SEEK_SET))
         goto read_error;
     struct pkg_table_entry entry;
     if (fread((void *) &entry, sizeof(entry), 1, file) != 1)
         goto read_error;
-    uint32_t digests_offset = entry.offset;
-    for (uint32_t i = 1; i < header.entry_count; i++) {
+    uint32_t digests_offset = reverseUint32(entry.offset);
+    for (uint32_t i = 1; i < reverseUint32(header.entry_count); i++) {
         if (fread((void *) &entry, sizeof(entry), 1, file) != 1)
             goto read_error;
-        if (entry.id == target_id) {
+        if (reverseUint32(entry.id) == target_id) {
             if (fseek(file, digests_offset + i * BUF_SIZE, SEEK_SET))
                 goto read_error;
             if (fread(buf, BUF_SIZE, 1, file) != 1)
